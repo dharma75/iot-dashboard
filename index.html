@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>IoT Dashboard</title>
+</head>
+<body>
+  <h1>IoT Data Dashboard</h1>
+  <ul id="data-list"></ul>
+
+  <script>
+    async function fetchData() {
+      const res = await fetch('/.netlify/functions/receive');
+      const data = await res.json();
+      const list = document.getElementById('data-list');
+      list.innerHTML = '';
+      data.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = `${new Date(item.timestamp).toLocaleString()}: ${JSON.stringify(item)}`;
+        list.appendChild(li);
+      });
+    }
+
+    setInterval(fetchData, 5000); // Refresh every 5 seconds
+    fetchData();
+  </script>
+</body>
+</html>
