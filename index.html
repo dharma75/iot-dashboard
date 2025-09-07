@@ -1,163 +1,288 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 Mobile Dashboard</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.8/mqtt.min.js"></script>
+  <meta charset="UTF-8" />
+  <title>ESP32 Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
-    body { font-family: Arial; margin: 10px; padding: 0; background: #f5f5f5; }
-    h1, h2 { text-align: center; }
-    #login { margin: 10px auto; padding: 10px; background: #fff; border-radius: 8px; max-width: 400px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);}
-    #login input { width: 90%; padding: 8px; margin: 5px 0; border-radius: 5px; border: 1px solid #ccc; }
-    #login button { padding: 10px 20px; border-radius: 5px; border: none; background: #28a745; color: white; font-size: 16px; cursor: pointer; }
-    #login button:hover { background: #218838; }
+    :root {
+      --primary: #007bff;
+      --danger: #dc3545;
+      --success: #28a745;
+      --gray: #ccc;
+      --bg: #f0f4f8;
+      --card: #ffffff;
+    }
 
-    #led-container { display: flex; justify-content: space-around; align-items: center; margin: 20px 0; }
-    .led-wrapper { text-align: center; }
-    .led { width: 40px; height: 40px; border-radius: 50%; margin: 5px auto; background: gray; box-shadow: 0 0 5px rgba(0,0,0,0.3);}
-    
-    #controls { text-align: center; margin: 20px 0; }
-    #controls button { padding: 10px 20px; margin: 5px; font-size: 16px; border-radius: 5px; border: none; cursor: pointer; }
-    #controls button.on { background: #007bff; color: white; }
-    #controls button.off { background: #dc3545; color: white; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: var(--bg);
+      margin: 0;
+      padding: 20px;
+    }
 
-    canvas { background: #fff; border-radius: 8px; padding: 10px; max-width: 100%; }
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+      color: #333;
+    }
+
+    #status {
+      text-align: center;
+      font-weight: bold;
+      margin-bottom: 20px;
+      font-size: 16px;
+    }
+
+    #login {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    input {
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid var(--gray);
+      min-width: 180px;
+    }
+
+    button.connect {
+      background: var(--success);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    #voltage {
+      text-align: center;
+      font-size: 20px;
+      margin-bottom: 10px;
+      font-weight: 500;
+    }
+
+    #voltageChart {
+      max-width: 800px;
+      height: 300px !important;
+      margin: 0 auto 30px auto;
+      background: var(--card);
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    #leds {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      flex-wrap: wrap;
+      margin-bottom: 30px;
+    }
+
+    .led-box {
+      text-align: center;
+    }
+
+    .led {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: gray;
+      margin: auto;
+      box-shadow: 0 0 8px rgba(0,0,0,0.2);
+      transition: background 0.3s;
+    }
+
+    .led-label {
+      margin-top: 8px;
+      font-size: 14px;
+      color: #555;
+    }
+
+    #blueControl {
+      text-align: center;
+    }
+
+    #blueLed {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: gray;
+      margin: 0 auto 8px auto;
+      box-shadow: 0 0 8px rgba(0,0,0,0.2);
+      transition: background 0.3s;
+    }
+
+    .ctrl-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      font-size: 14px;
+      cursor: pointer;
+      margin: 5px;
+      transition: background 0.3s;
+    }
+
+    .on {
+      background: var(--primary);
+      color: white;
+    }
+
+    .off {
+      background: var(--danger);
+      color: white;
+    }
   </style>
 </head>
 <body>
+  <h1>ESP32 Dashboard</h1>
+  <div id="status">🔴 Disconnected</div>
 
-<h1>ESP32 Dashboard</h1>
-
-<div id="login">
-  <label>HiveMQ Username:</label><br>
-  <input type="text" id="username" placeholder="Enter username"><br>
-  <label>Password:</label><br>
-  <input type="password" id="password" placeholder="Enter password"><br>
-  <button onclick="connectMQTT()">Connect</button>
-</div>
-
-<canvas id="voltageChart" width="400" height="200"></canvas>
-
-<h2>LED Indicators</h2>
-<div id="led-container">
-  <div class="led-wrapper">
-    Red LED
-    <div id="led-red" class="led"></div>
+  <div id="login">
+    <input type="text" id="username" placeholder="MQTT Username" />
+    <input type="password" id="password" placeholder="MQTT Password" />
+    <button class="connect" onclick="connectBroker()">Connect</button>
   </div>
-  <div class="led-wrapper">
-    Green LED
-    <div id="led-green" class="led"></div>
+
+  <div id="voltage">Voltage: -- V</div>
+  <canvas id="voltageChart"></canvas>
+
+  <div id="leds">
+    <div class="led-box">
+      <div id="redLed" class="led"></div>
+      <div class="led-label">Red LED</div>
+    </div>
+    <div class="led-box">
+      <div id="greenLed" class="led"></div>
+      <div class="led-label">Green LED</div>
+    </div>
   </div>
-  <div class="led-wrapper">
-    Blue LED
-    <div id="led-blue" class="led"></div>
+
+  <div id="blueControl">
+    <div id="blueLed"></div>
+    <div class="led-label">Blue LED</div>
+    <button class="ctrl-btn on" onclick="sendBlueLed(true)">ON</button>
+    <button class="ctrl-btn off" onclick="sendBlueLed(false)">OFF</button>
   </div>
-</div>
 
-<h2>Control Blue LED</h2>
-<div id="controls">
-  <button class="on" onclick="sendBlueLED('ON')">Turn ON</button>
-  <button class="off" onclick="sendBlueLED('OFF')">Turn OFF</button>
-</div>
+  <script>
+    const broker = "wss://c333d5f0afb14a0cb4e9d5fb059e1cbd.s1.eu.hivemq.cloud:8884/mqtt";
+    const topicVoltage = "esp32/voltage";
+    const topicControl = "esp32/control";
 
-<script>
-let client;
-const voltageTopic = "esp32/voltage";
-const controlTopic = "esp32/control";
+    let client = null;
+    let isConnected = false;
 
-// ---------------- Chart Setup ----------------
-const ctx = document.getElementById('voltageChart').getContext('2d');
-const voltageData = {
-  labels: [],
-  datasets: [{
-    label: 'Voltage (V)',
-    data: [],
-    borderColor: 'orange',
-    fill: false,
-    tension: 0.2
-  }]
-};
-const voltageChart = new Chart(ctx, {
-  type: 'line',
-  data: voltageData,
-  options: {
-    animation: false,
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      x: { title: { display: true, text: 'Time' } },
-      y: { title: { display: true, text: 'Voltage (V)' }, min: 0, max: 3.3 }
+    function connectBroker() {
+      const button = document.querySelector(".connect");
+
+      if (isConnected && client) {
+        client.end(); // Disconnect MQTT
+        isConnected = false;
+        document.getElementById("status").innerText = "🔴 Disconnected";
+        button.innerText = "Connect";
+        button.style.background = "#28a745";
+        document.getElementById("username").value = "";
+        document.getElementById("password").value = "";
+        return;
+      }
+
+      const user = document.getElementById("username").value;
+      const pass = document.getElementById("password").value;
+
+      client = mqtt.connect(broker, {
+        username: user,
+        password: pass,
+        protocolVersion: 4,
+        clean: true,
+        reconnectPeriod: 1000
+      });
+
+      client.on("connect", () => {
+        isConnected = true;
+        document.getElementById("status").innerText = "🟢 Connected";
+        button.innerText = "Disconnect";
+        button.style.background = "#dc3545";
+        client.subscribe(topicVoltage);
+        client.subscribe(topicControl);
+      });
+
+      client.on("error", () => {
+        document.getElementById("status").innerText = "🔴 Connection Failed";
+      });
+
+      client.on("close", () => {
+        isConnected = false;
+        document.getElementById("status").innerText = "🔴 Disconnected";
+        button.innerText = "Connect";
+        button.style.background = "#28a745";
+      });
+
+      client.on("message", (topic, message) => {
+        const msg = message.toString();
+        console.log("Received:", topic, msg);
+
+        if (topic === topicVoltage) {
+          const voltage = parseFloat(msg);
+          document.getElementById("voltage").innerText = "Voltage: " + voltage.toFixed(3) + " V";
+
+          const now = new Date().toLocaleTimeString();
+          voltageData.labels.push(now);
+          voltageData.datasets[0].data.push(voltage);
+          if (voltageData.labels.length > 20) {
+            voltageData.labels.shift();
+            voltageData.datasets[0].data.shift();
+          }
+          voltageChart.update();
+
+          document.getElementById("redLed").style.background = (voltage > 2.0) ? "red" : "gray";
+          document.getElementById("greenLed").style.background = (voltage <= 2.0) ? "green" : "gray";
+        }
+
+        if (topic === topicControl) {
+          document.getElementById("blueLed").style.background = (msg === "ON") ? "blue" : "gray";
+        }
+      });
     }
-  }
-});
 
-// ---------------- MQTT Functions ----------------
-function connectMQTT() {
-  const username = document.getElementById('username').value;
-  const password = document.getElementById('password').value;
+    const ctx = document.getElementById("voltageChart").getContext("2d");
+    const voltageData = {
+      labels: [],
+      datasets: [{
+        label: "Voltage (V)",
+        data: [],
+        borderColor: "blue",
+        fill: false,
+        tension: 0.1
+      }]
+    };
+    const voltageChart = new Chart(ctx, {
+      type: "line",
+      data: voltageData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            suggestedMin: 0,
+            suggestedMax: 3.5
+          }
+        }
+      }
+    });
 
-  if(!username || !password){
-    alert("Please enter username and password!");
-    return;
-  }
-
-  document.getElementById('login').style.display = 'none';
-
-  const options = { username: username, password: password, keepalive: 60 };
-
-  client = mqtt.connect("wss://c333d5f0afb14a0cb4e9d5fb059e1cbd.s1.eu.hivemq.cloud:8884/mqtt", options);
-
-  client.on('connect', () => {
-    console.log("Connected to HiveMQ WebSocket");
-    client.subscribe(voltageTopic);
-    client.subscribe(controlTopic);
-  });
-
-  client.on('message', (topic, message) => {
-    const msg = message.toString();
-    if(topic === voltageTopic){
-      updateVoltageChart(parseFloat(msg));
-      updateLEDs(parseFloat(msg));
+    function sendBlueLed(on) {
+      if (!client || !client.connected) return;
+      const msg = on ? "ON" : "OFF";
+      client.publish(topicControl, msg);
+      document.getElementById("blueLed").style.background = on ? "blue" : "gray";
     }
-    if(topic === controlTopic){
-      document.getElementById('led-blue').style.background = msg === 'ON' ? 'blue' : 'gray';
-    }
-  });
-
-  client.on('error', (err) => {
-    console.error('Connection error: ', err);
-    alert('MQTT Connection failed. Check username/password.');
-    document.getElementById('login').style.display = 'block';
-  });
-}
-
-// ---------------- Update functions ----------------
-function updateVoltageChart(voltage) {
-  const now = new Date().toLocaleTimeString();
-  voltageData.labels.push(now);
-  voltageData.datasets[0].data.push(voltage);
-
-  if(voltageData.labels.length > 20){
-    voltageData.labels.shift();
-    voltageData.datasets[0].data.shift();
-  }
-  voltageChart.update();
-}
-
-function updateLEDs(voltage){
-  const threshold = 2.0;
-  document.getElementById('led-red').style.background = voltage > threshold ? 'red' : 'gray';
-  document.getElementById('led-green').style.background = voltage <= threshold ? 'green' : 'gray';
-}
-
-function sendBlueLED(state){
-  if(client && client.connected){
-    client.publish(controlTopic, state);
-  }
-}
-</script>
-
+  </script>
 </body>
 </html>
