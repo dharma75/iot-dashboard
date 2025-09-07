@@ -1,27 +1,163 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>IoT Dashboard</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 Mobile Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.8/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial; margin: 10px; padding: 0; background: #f5f5f5; }
+    h1, h2 { text-align: center; }
+    #login { margin: 10px auto; padding: 10px; background: #fff; border-radius: 8px; max-width: 400px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);}
+    #login input { width: 90%; padding: 8px; margin: 5px 0; border-radius: 5px; border: 1px solid #ccc; }
+    #login button { padding: 10px 20px; border-radius: 5px; border: none; background: #28a745; color: white; font-size: 16px; cursor: pointer; }
+    #login button:hover { background: #218838; }
+
+    #led-container { display: flex; justify-content: space-around; align-items: center; margin: 20px 0; }
+    .led-wrapper { text-align: center; }
+    .led { width: 40px; height: 40px; border-radius: 50%; margin: 5px auto; background: gray; box-shadow: 0 0 5px rgba(0,0,0,0.3);}
+    
+    #controls { text-align: center; margin: 20px 0; }
+    #controls button { padding: 10px 20px; margin: 5px; font-size: 16px; border-radius: 5px; border: none; cursor: pointer; }
+    #controls button.on { background: #007bff; color: white; }
+    #controls button.off { background: #dc3545; color: white; }
+
+    canvas { background: #fff; border-radius: 8px; padding: 10px; max-width: 100%; }
+  </style>
 </head>
 <body>
-  <h1>IoT Data Dashboard</h1>
-  <ul id="data-list"></ul>
 
-  <script>
-    async function fetchData() {
-      const res = await fetch('/.netlify/functions/receive');
-      const data = await res.json();
-      const list = document.getElementById('data-list');
-      list.innerHTML = '';
-      data.forEach(item => {
-        const li = document.createElement('li');
-        li.textContent = `${new Date(item.timestamp).toLocaleString()}: ${JSON.stringify(item)}`;
-        list.appendChild(li);
-      });
+<h1>ESP32 Dashboard</h1>
+
+<div id="login">
+  <label>HiveMQ Username:</label><br>
+  <input type="text" id="username" placeholder="Enter username"><br>
+  <label>Password:</label><br>
+  <input type="password" id="password" placeholder="Enter password"><br>
+  <button onclick="connectMQTT()">Connect</button>
+</div>
+
+<canvas id="voltageChart" width="400" height="200"></canvas>
+
+<h2>LED Indicators</h2>
+<div id="led-container">
+  <div class="led-wrapper">
+    Red LED
+    <div id="led-red" class="led"></div>
+  </div>
+  <div class="led-wrapper">
+    Green LED
+    <div id="led-green" class="led"></div>
+  </div>
+  <div class="led-wrapper">
+    Blue LED
+    <div id="led-blue" class="led"></div>
+  </div>
+</div>
+
+<h2>Control Blue LED</h2>
+<div id="controls">
+  <button class="on" onclick="sendBlueLED('ON')">Turn ON</button>
+  <button class="off" onclick="sendBlueLED('OFF')">Turn OFF</button>
+</div>
+
+<script>
+let client;
+const voltageTopic = "esp32/voltage";
+const controlTopic = "esp32/control";
+
+// ---------------- Chart Setup ----------------
+const ctx = document.getElementById('voltageChart').getContext('2d');
+const voltageData = {
+  labels: [],
+  datasets: [{
+    label: 'Voltage (V)',
+    data: [],
+    borderColor: 'orange',
+    fill: false,
+    tension: 0.2
+  }]
+};
+const voltageChart = new Chart(ctx, {
+  type: 'line',
+  data: voltageData,
+  options: {
+    animation: false,
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      x: { title: { display: true, text: 'Time' } },
+      y: { title: { display: true, text: 'Voltage (V)' }, min: 0, max: 3.3 }
     }
+  }
+});
 
-    setInterval(fetchData, 5000); // Refresh every 5 seconds
-    fetchData();
-  </script>
+// ---------------- MQTT Functions ----------------
+function connectMQTT() {
+  const username = document.getElementById('username').value;
+  const password = document.getElementById('password').value;
+
+  if(!username || !password){
+    alert("Please enter username and password!");
+    return;
+  }
+
+  document.getElementById('login').style.display = 'none';
+
+  const options = { username: username, password: password, keepalive: 60 };
+
+  client = mqtt.connect("wss://c333d5f0afb14a0cb4e9d5fb059e1cbd.s1.eu.hivemq.cloud:8884/mqtt", options);
+
+  client.on('connect', () => {
+    console.log("Connected to HiveMQ WebSocket");
+    client.subscribe(voltageTopic);
+    client.subscribe(controlTopic);
+  });
+
+  client.on('message', (topic, message) => {
+    const msg = message.toString();
+    if(topic === voltageTopic){
+      updateVoltageChart(parseFloat(msg));
+      updateLEDs(parseFloat(msg));
+    }
+    if(topic === controlTopic){
+      document.getElementById('led-blue').style.background = msg === 'ON' ? 'blue' : 'gray';
+    }
+  });
+
+  client.on('error', (err) => {
+    console.error('Connection error: ', err);
+    alert('MQTT Connection failed. Check username/password.');
+    document.getElementById('login').style.display = 'block';
+  });
+}
+
+// ---------------- Update functions ----------------
+function updateVoltageChart(voltage) {
+  const now = new Date().toLocaleTimeString();
+  voltageData.labels.push(now);
+  voltageData.datasets[0].data.push(voltage);
+
+  if(voltageData.labels.length > 20){
+    voltageData.labels.shift();
+    voltageData.datasets[0].data.shift();
+  }
+  voltageChart.update();
+}
+
+function updateLEDs(voltage){
+  const threshold = 2.0;
+  document.getElementById('led-red').style.background = voltage > threshold ? 'red' : 'gray';
+  document.getElementById('led-green').style.background = voltage <= threshold ? 'green' : 'gray';
+}
+
+function sendBlueLED(state){
+  if(client && client.connected){
+    client.publish(controlTopic, state);
+  }
+}
+</script>
+
 </body>
 </html>
